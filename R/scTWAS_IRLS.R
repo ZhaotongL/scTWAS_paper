@@ -25,8 +25,6 @@ option_list = list(
               help="Path to plink executable [%default]"),
   make_option("--qcovar", action="store", default=NA, type='character',
               help="Path to quantitative covariates (PLINK format) [optional]"),
-  make_option("--batch", action="store", default=NA, type='character',
-              help="Path to batch covariates (PLINK format) [optional]"),
   make_option("--crossval", action="store", default=5, type='double',
               help="How many folds of cross-validation, 0 to skip [default: %default]"),
   make_option("--niter", action="store", default=10, type='double',
@@ -36,7 +34,7 @@ option_list = list(
   make_option("--noclean", action="store_true", default=FALSE,
               help="Do not delete any temporary files (for debugging) [default: %default]"),
   make_option("--scale_pheno", action="store_true", default=FALSE,
-              help="Scale phenotype or not [default: %default]") ## NOT USE 
+              help="Scale phenotype or not [default: %default]") ## NOT USE
 
 )
 
@@ -109,7 +107,6 @@ cleanup = function() {
 # Perform i/o checks here:
 files = paste(opt$bfile,c(".bed",".bim",".fam"),sep='')
 if ( !is.na(opt$pheno) ) files = c(files,opt$pheno)
-if ( !is.na(opt$batch) ) files = c(files,opt$batch)
 
 for ( f in files ) {
 	if ( !file.exists(f) ){
@@ -165,23 +162,6 @@ if ( !is.na(opt$qcovar) ) {
     }
 ## pheno, pheno_covar and fam mathced
 
-batch = NULL
-if ( !is.na(opt$batch) ) {
-	batch.df = ( read.table(opt$batch,as.is=T,head=T) )
-	if ( opt$verbose >= 1 ) cat( "Loaded",ncol(batch.df)-2,"batch covariates\n")
-	# Match up data
-	m = match( paste(fam[,1],fam[,2]) , paste(batch.df[,1],batch.df[,2]) )
-	m.keep = !is.na(m)
-	fam = fam[m.keep,]
-	pheno = pheno[m.keep,]
-    pheno_covar = pheno_covar[m.keep,]
-	m = m[m.keep]
-	batch.df = batch.df[m,]
-    ## 
-    batch = batch.df
-    }
-## pheno, pheno_covar, fam and batch mathced
-
 pheno.file = paste(opt$tmp,".pheno",sep='')
 write.table(pheno[,c(1,2,8)],quote=F,row.names=F,col.names=F,file=pheno.file)
 
@@ -203,7 +183,6 @@ pheno = genos$fam[,c(1,2,6)]
 m = match( paste(pheno[,1],pheno[,2]) , paste(pheno_covar[,1],pheno_covar[,2]) )
 if(ncol(pheno_covar)>3){
     pheno_covar = pheno_covar[m,]
-    batch = batch[m,]
     ncov = ncol(pheno_covar) - 3
 }else{
     pheno_covar = NULL
@@ -227,7 +206,7 @@ N.tot = nrow(genos$bed)
 if ( opt$verbose >= 1 ) cat(nrow(pheno),"phenotyped samples, ",nrow(genos$bed),"genotyped samples, ",ncol(genos$bed)," markers\n")
 
 # --- CROSSVALIDATION ANALYSES
-set.seed(1) 
+set.seed(1)
 cv.performance = matrix(NA,nrow=2,ncol=opt$niter)
 rownames(cv.performance) = c("rsq","pval")
 colnames(cv.performance) = 1:opt$niter
@@ -260,27 +239,22 @@ for(j in 1:opt$niter){
             geno.train[,nasnps.train != 0] = 0
         }
         covar.train = pheno_covar[cv.sample[ -indx ], -(1:3) ]
-        batch.train = batch[cv.sample[ -indx ], ]
         if(!is.na(opt$sctobj)){sct.train = pheno_sct[cv.sample[ -indx ], ]}
-        if(is.null(batch.train)){
-            covar.train.m = cbind(1*sct.train$s*sct.train$w, covar.train*sct.train$s*sct.train$w)
-        }else{
-            covar.train.m = cbind(1*sct.train$s*sct.train$w, covar.train*sct.train$s*sct.train$w, batch.train * sct.train$w)
-        }
-        pred.res = weights.enet( genos = geno.train * sct.train$s * sct.train$w, pheno = as.matrix(sct.train$rc_w) , 
+        covar.train.m = cbind(1*sct.train$s*sct.train$w, covar.train*sct.train$s*sct.train$w)
+        pred.res = weights.enet( genos = geno.train * sct.train$s * sct.train$w, pheno = as.matrix(sct.train$rc_w) ,
                                 covar = covar.train.m, alpha=0.5, intercept=F)
         pred.wgt = pred.res$eff.wgt
         intercept.m = pred.res$intercept
         pred.wgt[ is.na(pred.wgt) ] = 0
-        cv.calls[ indx , 1 ] = (genos$bed[ cv.sample[ indx ] , ] * pheno_sct[cv.sample[ indx ], ]$s )  %*% pred.wgt 
-        cv.calls1[ indx , 1 ] = (genos$bed[ cv.sample[ indx ] , ] * pheno_sct[cv.sample[ indx ], ]$s * pheno_sct[cv.sample[ indx ], ]$w)  %*% pred.wgt 
+        cv.calls[ indx , 1 ] = (genos$bed[ cv.sample[ indx ] , ] * pheno_sct[cv.sample[ indx ], ]$s )  %*% pred.wgt
+        cv.calls1[ indx , 1 ] = (genos$bed[ cv.sample[ indx ] , ] * pheno_sct[cv.sample[ indx ], ]$s * pheno_sct[cv.sample[ indx ], ]$w)  %*% pred.wgt
         cv.all[indx, 3] = pheno_sct[cv.sample[ indx ], ]$rc_w - intercept.m  * pheno_sct[cv.sample[ indx ], ]$s * pheno_sct[cv.sample[ indx ], ]$w
         if(ncov>0){
         new_mean[indx] = intercept.m  + genos$bed[ cv.sample[ indx ] , ] %*% pred.wgt + as.matrix(pheno_covar[cv.sample[ indx ],-(1:3)]) %*% coef(pred.res$enet,s = "lambda.min")[3:(3+ncov-1)]
             }else{
-         new_mean[indx] = intercept.m  + genos$bed[ cv.sample[ indx ] , ] %*% pred.wgt    
+         new_mean[indx] = intercept.m  + genos$bed[ cv.sample[ indx ] , ] %*% pred.wgt
         }
-    }		
+    }
     # compute rsq + P-value for each iteration
 	if ( !is.na(sd(cv.calls[,1])) && sd(cv.calls[,1]) != 0 ) {
        reg = summary(lm( pheno_sct[cv.sample, ]$rc ~ pheno_sct[cv.sample, ]$s  + cv.calls[,1]  - 1, weights =  pheno_sct[cv.sample, ]$w^2))
@@ -289,28 +263,25 @@ for(j in 1:opt$niter){
 		cv.performance[ 2, j ] = reg$coef[1,4]
 	} else {
 		cv.performance[ 1:2, j ] = NA
-	}   
-    
+	}
+
     set.seed(1)
-    if(is.null(batch)){
-        covar.m = cbind(1*pheno_sct$s*pheno_sct$w, pheno_covar[,-(1:3)]*pheno_sct$s*pheno_sct$w)
-    }else{
-        covar.m = cbind(1*pheno_sct$s*pheno_sct$w, pheno_covar[,-(1:3)]*pheno_sct$s*pheno_sct$w, batch * pheno_sct$w)
-    }
-    pred.wgt = weights.enet( genos = genos$bed * pheno_sct$s * pheno_sct$w, pheno = as.matrix(pheno_sct$rc_w) , 
+    covar.m = cbind(1*pheno_sct$s*pheno_sct$w, pheno_covar[,-(1:3)]*pheno_sct$s*pheno_sct$w)
+
+    pred.wgt = weights.enet( genos = genos$bed * pheno_sct$s * pheno_sct$w, pheno = as.matrix(pheno_sct$rc_w) ,
                                 covar = covar.m, alpha=0.5, intercept=F)
     wgt.matrix[,j] = pred.wgt$eff.wgt
     intercept[j] = pred.wgt$intercept
 
     new_mu <- pheno_sct[cv.sample, ]$s * new_mean
-    new_var <- new_mu + new_mu^2 / pheno_sct$theta[1] 
-    new_var[new_var < pheno_sct$min_var[1]] <- pheno_sct$min_var[1] 
+    new_var <- new_mu + new_mu^2 / pheno_sct$theta[1]
+    new_var[new_var < pheno_sct$min_var[1]] <- pheno_sct$min_var[1]
     new_w <- 1 / sqrt(new_var)
     pheno_sct$w[cv.sample] <- new_w
     pheno_sct$rc_w <- pheno_sct$rc * pheno_sct$w
 
 }
-    
+
 
 if ( opt$verbose >= 1 ) write.table(cv.performance,quote=F,sep='\t')
 
