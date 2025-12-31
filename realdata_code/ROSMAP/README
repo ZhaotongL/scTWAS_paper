@@ -1,0 +1,17 @@
+# README
+
+"CTS" denotes cell-type-specific data and TWAS models; "BULK" denotes tissue-level data and models for bulk-like TWAS analysis
+
+1. make gene expression data
+Rscript GE_generate_CTS.R 
+Rscript GE_generate_BULK.R 
+
+2. run TWAS Stage 1 imputation model
+Stage1_CTS.slurm
+Stage1_BULK.slurm
+
+3. run TWAS Stage 2 gene association tests
+Stage2_CTS.slurm
+Stage2_BULK.slurm
+
+summary.R
